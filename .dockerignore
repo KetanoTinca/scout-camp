@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/dev-dist
+**/.turbo
+.git
+.scratch
+data
+*.db
+*.db-journal
+.env
+.env.*
+!.env.example
+**/*.log
+coverage

@@ -1,0 +1,46 @@
+// Prisma schema for Orion's Cookbook.
+//
+// This skeleton slice (issue 0002) ships only the throwaway `Note` sample entity used
+// to prove the stack round-trips. The real domain models (Ingredient, Shop, ShopPrice,
+// Recipe, RecipeIngredient, Camp, MenuEntry, ShoppingItem, Expense) are added by the
+// later vertical slices, each via its own migration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Sample record proving REST + WebSocket + offline-outbox sync end-to-end.
+model Note {
+  id   String @id
+  text String
+
+  /// Client timestamp (epoch ms). The last-write-wins ordering key.
+  /// Stored as BigInt because epoch-ms exceeds Prisma's 32-bit Int.
+  updatedAt BigInt
+}
+
+/// Shared ingredient catalog (issue 0003): the items recipes, inventory, and shopping
+/// all reference. Also holds non-food supplies as COUNT-dimension entries.
+model Ingredient {
+  id   String @id
+  name String
+
+  /// MASS | VOLUME | COUNT. Plain String — SQLite has no native enums; the values are
+  /// validated by the Zod `IngredientSchema` in packages/core at the boundary.
+  dimension String
+  /// g | ml | piece. The base unit every stored quantity of this item uses.
+  baseUnit String
+
+  /// Optional grouping label (e.g. "Produce", "Supplies").
+  category String?
+  /// Quantity on hand, in base units. Editable stock + par levels arrive in slice 0004.
+  stockQty Float @default(0)
+
+  /// Client timestamp (epoch ms). The last-write-wins ordering key.
+  updatedAt BigInt
+}

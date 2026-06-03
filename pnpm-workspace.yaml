@@ -1,0 +1,17 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+allowBuilds:
+  '@prisma/client': set this to true or false
+  '@prisma/engines': set this to true or false
+  esbuild: set this to true or false
+  prisma: set this to true or false
+
+# Dependencies allowed to run install scripts (pnpm blocks these by default).
+# Prisma fetches/builds its query engine; esbuild installs its platform binary.
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - prisma
+  - esbuild

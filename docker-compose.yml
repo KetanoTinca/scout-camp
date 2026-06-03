@@ -1,0 +1,23 @@
+# Orion's Cookbook — single self-hosted container.
+# cloudflared runs separately (already configured by the operator) and points at :3000.
+#
+# Usage: copy .env.example to .env, set APP_SECRET and APP_PASSWORD, then `docker compose up`.
+
+services:
+  app:
+    build: .
+    image: orions-cookbook
+    ports:
+      - "3000:3000"
+    environment:
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env}
+      APP_PASSWORD: ${APP_PASSWORD:?set APP_PASSWORD in .env}
+      DATABASE_URL: file:/data/app.db
+      CURRENCY: RON
+      PORT: "3000"
+    volumes:
+      - cookbook-data:/data
+    restart: unless-stopped
+
+volumes:
+  cookbook-data:
