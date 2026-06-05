@@ -36,6 +36,24 @@ export function baseUnitForDimension(dimension: Dimension): BaseUnit {
   }
 }
 
+/**
+ * The units a user may *enter* a quantity in for a given dimension, smallest first. The UI
+ * offers these in a unit picker (e.g. adjusting stock in g or kg); each is a valid `toBase`
+ * input, and `fromBase`'s chosen unit is always a member, so an edited value round-trips.
+ */
+export function inputUnitsForDimension(
+  dimension: Dimension,
+): readonly [DisplayQuantity["unit"], ...DisplayQuantity["unit"][]] {
+  switch (dimension) {
+    case "MASS":
+      return ["g", "kg"];
+    case "VOLUME":
+      return ["ml", "L"];
+    case "COUNT":
+      return ["piece"];
+  }
+}
+
 /** How many base units one of each accepted input unit represents. */
 const UNIT_TO_BASE_FACTOR: Record<string, number> = {
   g: 1,

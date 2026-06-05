@@ -1,6 +1,14 @@
 import {
+  ENTITY_CAMP,
+  ENTITY_EXPENSE,
   ENTITY_INGREDIENT,
+  ENTITY_MENU_ENTRY,
   ENTITY_NOTE,
+  ENTITY_RECIPE,
+  ENTITY_RECIPE_INGREDIENT,
+  ENTITY_SHOP,
+  ENTITY_SHOP_PRICE,
+  ENTITY_SHOPPING_ITEM,
   ServerMessageSchema,
   type ServerChange,
   type SyncOp,
@@ -12,6 +20,16 @@ import type { SyncTransport } from "./transport.js";
 const PULL_ENDPOINTS: Record<string, { path: string; key: string }> = {
   [ENTITY_NOTE]: { path: "/api/notes", key: "notes" },
   [ENTITY_INGREDIENT]: { path: "/api/ingredients", key: "ingredients" },
+  [ENTITY_SHOP]: { path: "/api/shops", key: "shops" },
+  [ENTITY_SHOP_PRICE]: { path: "/api/shop-prices", key: "shopPrices" },
+  [ENTITY_RECIPE]: { path: "/api/recipes", key: "recipes" },
+  [ENTITY_RECIPE_INGREDIENT]: { path: "/api/recipe-ingredients", key: "recipeIngredients" },
+  [ENTITY_CAMP]: { path: "/api/camps", key: "camps" },
+  // Key is the mechanical `${entity}s` of `menuEntry`, matching the server response and the
+  // Dexie table name — see http-transport's lockstep note in db.ts / routes/api.ts.
+  [ENTITY_MENU_ENTRY]: { path: "/api/menu-entries", key: "menuEntrys" },
+  [ENTITY_SHOPPING_ITEM]: { path: "/api/shopping-items", key: "shoppingItems" },
+  [ENTITY_EXPENSE]: { path: "/api/expenses", key: "expenses" },
 };
 
 /**

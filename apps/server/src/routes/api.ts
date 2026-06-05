@@ -3,7 +3,18 @@ import type { FastifyInstance } from "fastify";
 import { bearerFromHeader, verifyToken } from "../auth.js";
 import type { Env } from "../env.js";
 import type { RealtimeHub } from "../realtime.js";
-import { listIngredients, listNotes } from "../repository.js";
+import {
+  listCamps,
+  listExpenses,
+  listIngredients,
+  listMenuEntries,
+  listNotes,
+  listRecipeIngredients,
+  listRecipes,
+  listShopPrices,
+  listShoppingItems,
+  listShops,
+} from "../repository.js";
 import { applyOps } from "../sync.js";
 
 /**
@@ -23,6 +34,26 @@ export function registerApiRoutes(app: FastifyInstance, env: Env, hub: RealtimeH
     api.get("/api/notes", async () => ({ notes: await listNotes() }));
 
     api.get("/api/ingredients", async () => ({ ingredients: await listIngredients() }));
+
+    api.get("/api/shops", async () => ({ shops: await listShops() }));
+
+    api.get("/api/shop-prices", async () => ({ shopPrices: await listShopPrices() }));
+
+    api.get("/api/recipes", async () => ({ recipes: await listRecipes() }));
+
+    api.get("/api/recipe-ingredients", async () => ({
+      recipeIngredients: await listRecipeIngredients(),
+    }));
+
+    api.get("/api/camps", async () => ({ camps: await listCamps() }));
+
+    // Response key is the mechanical `${entity}s` of ENTITY_MENU_ENTRY (`menuEntry`) so it
+    // stays in lockstep with the Dexie table name the client mirror derives.
+    api.get("/api/menu-entries", async () => ({ menuEntrys: await listMenuEntries() }));
+
+    api.get("/api/shopping-items", async () => ({ shoppingItems: await listShoppingItems() }));
+
+    api.get("/api/expenses", async () => ({ expenses: await listExpenses() }));
 
     api.post("/api/sync", async (req, reply) => {
       const parsed = SyncPushSchema.safeParse(req.body);

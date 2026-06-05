@@ -1,11 +1,33 @@
 import { describe, it, expect } from "vitest";
-import { baseUnitForDimension, fromBase, format, toBase } from "./units.js";
+import {
+  baseUnitForDimension,
+  fromBase,
+  format,
+  inputUnitsForDimension,
+  toBase,
+} from "./units.js";
 
 describe("baseUnitForDimension", () => {
   it("maps each dimension to its canonical base unit", () => {
     expect(baseUnitForDimension("MASS")).toBe("g");
     expect(baseUnitForDimension("VOLUME")).toBe("ml");
     expect(baseUnitForDimension("COUNT")).toBe("piece");
+  });
+});
+
+describe("inputUnitsForDimension", () => {
+  it("offers base + stepped-up unit for mass and volume, base only for count", () => {
+    expect(inputUnitsForDimension("MASS")).toEqual(["g", "kg"]);
+    expect(inputUnitsForDimension("VOLUME")).toEqual(["ml", "L"]);
+    expect(inputUnitsForDimension("COUNT")).toEqual(["piece"]);
+  });
+
+  it("only offers units that toBase accepts, so entered values round-trip", () => {
+    for (const dimension of ["MASS", "VOLUME", "COUNT"] as const) {
+      for (const unit of inputUnitsForDimension(dimension)) {
+        expect(() => toBase(1, unit)).not.toThrow();
+      }
+    }
   });
 });
 

@@ -1,4 +1,20 @@
-import type { Dimension, BaseUnit, Ingredient, Note } from "@orions-cookbook/core";
+import type {
+  Dimension,
+  BaseUnit,
+  Camp,
+  Expense,
+  Ingredient,
+  MealSlot,
+  MenuEntry,
+  Note,
+  Recipe,
+  RecipeCategory,
+  RecipeIngredient,
+  Shop,
+  ShopPrice,
+  ShoppingItem,
+  ShoppingSource,
+} from "@orions-cookbook/core";
 import { prisma } from "./db.js";
 
 /**
@@ -25,6 +41,110 @@ export async function listIngredients(): Promise<Ingredient[]> {
     baseUnit: row.baseUnit as BaseUnit,
     category: row.category ?? undefined,
     stockQty: row.stockQty,
+    parLevel: row.parLevel ?? undefined,
+    updatedAt: Number(row.updatedAt),
+  }));
+}
+
+export async function listShops(): Promise<Shop[]> {
+  const rows = await prisma.shop.findMany();
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    updatedAt: Number(row.updatedAt),
+  }));
+}
+
+export async function listShopPrices(): Promise<ShopPrice[]> {
+  const rows = await prisma.shopPrice.findMany();
+  return rows.map((row) => ({
+    id: row.id,
+    ingredientId: row.ingredientId,
+    shopId: row.shopId,
+    packageSize: row.packageSize,
+    packagePrice: row.packagePrice,
+    updatedAt: Number(row.updatedAt),
+  }));
+}
+
+export async function listRecipes(): Promise<Recipe[]> {
+  const rows = await prisma.recipe.findMany();
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    baseServings: row.baseServings,
+    // Stored as a plain string; the allowed values are guaranteed by the sync-write schema.
+    category: row.category as RecipeCategory,
+    // tags/steps are persisted JSON-encoded (SQLite has no array columns).
+    tags: JSON.parse(row.tags) as string[],
+    steps: JSON.parse(row.steps) as string[],
+    updatedAt: Number(row.updatedAt),
+  }));
+}
+
+export async function listRecipeIngredients(): Promise<RecipeIngredient[]> {
+  const rows = await prisma.recipeIngredient.findMany();
+  return rows.map((row) => ({
+    id: row.id,
+    recipeId: row.recipeId,
+    ingredientId: row.ingredientId,
+    quantity: row.quantity,
+    updatedAt: Number(row.updatedAt),
+  }));
+}
+
+export async function listCamps(): Promise<Camp[]> {
+  const rows = await prisma.camp.findMany();
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    headcount: row.headcount,
+    updatedAt: Number(row.updatedAt),
+  }));
+}
+
+export async function listMenuEntries(): Promise<MenuEntry[]> {
+  const rows = await prisma.menuEntry.findMany();
+  return rows.map((row) => ({
+    id: row.id,
+    campId: row.campId,
+    date: row.date,
+    // Stored as a plain string; the allowed values are guaranteed by the sync-write schema.
+    slot: row.slot as MealSlot,
+    recipeId: row.recipeId,
+    // Null in the DB means "no override"; the wire shape omits the field entirely.
+    servingsOverride: row.servingsOverride ?? undefined,
+    updatedAt: Number(row.updatedAt),
+  }));
+}
+
+export async function listShoppingItems(): Promise<ShoppingItem[]> {
+  const rows = await prisma.shoppingItem.findMany();
+  return rows.map((row) => ({
+    id: row.id,
+    campId: row.campId,
+    ingredientId: row.ingredientId,
+    // Stored as a plain string; the allowed values are guaranteed by the sync-write schema.
+    source: row.source as ShoppingSource,
+    quantity: row.quantity,
+    // Null in the DB means "not yet bought"; the wire shape omits the field entirely.
+    received: row.received ?? undefined,
+    updatedAt: Number(row.updatedAt),
+  }));
+}
+
+export async function listExpenses(): Promise<Expense[]> {
+  const rows = await prisma.expense.findMany();
+  return rows.map((row) => ({
+    id: row.id,
+    campId: row.campId,
+    amount: row.amount,
+    label: row.label,
+    // Null in the DB means "unset"; the wire shape omits these fields entirely.
+    category: row.category ?? undefined,
+    day: row.day ?? undefined,
     updatedAt: Number(row.updatedAt),
   }));
 }

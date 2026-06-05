@@ -7,8 +7,9 @@ import { BaseUnitSchema, DimensionSchema, baseUnitForDimension } from "../units.
  * `baseUnit` every quantity of it is stored in — plus a free-text `category` for grouping.
  * Non-food supplies (charcoal, bin bags) are simply COUNT-dimension entries in this catalog.
  *
- * `stockQty` (base units) is how much is currently on hand; it ships here defaulting to 0
- * and becomes editable with par levels and low-stock flagging in the inventory slice (0004).
+ * `stockQty` (base units) is how much is currently on hand and `parLevel` (base units) is
+ * the optional minimum we want to keep — when stock falls to or below it the inventory view
+ * flags the item as low (issue 0004). Both are hand-adjustable; nothing auto-decrements them.
  */
 export const ENTITY_INGREDIENT = "ingredient" as const;
 
@@ -21,8 +22,10 @@ export const IngredientSchema = z
     baseUnit: BaseUnitSchema,
     /** Optional grouping label, e.g. "Produce", "Dairy", "Supplies". */
     category: z.string().optional(),
-    /** Quantity on hand, in base units. Defaults to 0 until the inventory slice. */
+    /** Quantity on hand, in base units. Defaults to 0 until first adjusted. */
     stockQty: z.number().nonnegative().default(0),
+    /** Optional par (minimum) level, in base units. Unset means no low-stock flagging. */
+    parLevel: z.number().nonnegative().optional(),
     /** Client timestamp (epoch ms) — the last-write-wins ordering key. */
     updatedAt: z.number().int().nonnegative(),
   })
@@ -31,3 +34,12 @@ export const IngredientSchema = z
     path: ["baseUnit"],
   });
 export type Ingredient = z.infer<typeof IngredientSchema>;
+
+/**
+ * Whether an ingredient is "low": a par level is set and current stock has fallen to or
+ * below it (issue 0004). Pure rule shared by the inventory view now and the restock push
+ * later, so "low" means the same thing everywhere. No par set → never low.
+ */
+export function isLowStock(ing: Pick<Ingredient, "stockQty" | "parLevel">): boolean {
+  return ing.parLevel !== undefined && ing.stockQty <= ing.parLevel;
+}

@@ -38,9 +38,175 @@ model Ingredient {
 
   /// Optional grouping label (e.g. "Produce", "Supplies").
   category String?
-  /// Quantity on hand, in base units. Editable stock + par levels arrive in slice 0004.
+  /// Quantity on hand, in base units. Hand-adjusted in the inventory view (slice 0004).
   stockQty Float @default(0)
+  /// Optional par (minimum) level, in base units. Null means no low-stock flagging.
+  parLevel Float?
 
   /// Client timestamp (epoch ms). The last-write-wins ordering key.
   updatedAt BigInt
+}
+
+/// A shop the group buys ingredients at (issue 0005). Identity only — a name; the actual
+/// package offers live in ShopPrice. No foreign keys: records sync independently and
+/// last-write-wins, so a price may arrive before its shop/ingredient.
+model Shop {
+  id   String @id
+  name String
+
+  /// Client timestamp (epoch ms). The last-write-wins ordering key.
+  updatedAt BigInt
+}
+
+/// A per-shop package offer for one ingredient (issue 0005): a package size in the
+/// ingredient's base units and the package price in RON. The pricing module derives
+/// price-per-unit and the cheapest shop from a set of these.
+model ShopPrice {
+  id           String @id
+  /// The catalog ingredient this offer prices (plain id, no FK — see Shop).
+  ingredientId String
+  /// The shop the offer is at (plain id, no FK).
+  shopId       String
+
+  /// Package size in the ingredient's base units (e.g. 1000 for a 1 kg bag).
+  packageSize  Float
+  /// Price of one package, in RON.
+  packagePrice Float
+
+  /// Client timestamp (epoch ms). The last-write-wins ordering key.
+  updatedAt BigInt
+
+  @@index([ingredientId])
+}
+
+/// A cookbook recipe (issue 0006): identity + details. Its ingredient lines live in
+/// RecipeIngredient (one row per line), the same split as Shop/ShopPrice. No FKs — records
+/// sync independently and last-write-wins.
+model Recipe {
+  id   String @id
+  name String
+
+  /// Servings the stored ingredient quantities are written for; the scaling baseline.
+  baseServings Int
+  /// BREAKFAST | LUNCH | DINNER | SNACK | DESSERT. Plain String — SQLite has no enums; the
+  /// values are validated by the Zod RecipeSchema in packages/core at the boundary.
+  category     String
+
+  /// JSON-encoded string[] of free filter tags — SQLite has no array columns.
+  tags  String
+  /// JSON-encoded ordered string[] of cooking steps.
+  steps String
+
+  /// Client timestamp (epoch ms). The last-write-wins ordering key.
+  updatedAt BigInt
+}
+
+/// One ingredient line of a recipe (issue 0006): links a recipe to a catalog ingredient with
+/// a quantity in that ingredient's base units, written for the recipe's base servings. The
+/// scaling module rescales the quantity for display.
+model RecipeIngredient {
+  id           String @id
+  /// The recipe this line belongs to (plain id, no FK — see Shop).
+  recipeId     String
+  /// The catalog ingredient this line measures (plain id, no FK).
+  ingredientId String
+
+  /// Quantity in the ingredient's base units, at the recipe's base servings.
+  quantity Float
+
+  /// Client timestamp (epoch ms). The last-write-wins ordering key.
+  updatedAt BigInt
+
+  @@index([recipeId])
+}
+
+/// A planned outing (issue 0007): identity + details. Its per-day, per-slot recipe
+/// placements live in MenuEntry (one row each), the same split as Recipe/RecipeIngredient.
+/// startDate/endDate are bare calendar days (YYYY-MM-DD) stored as String; headcount is the
+/// default serving target recipes scale to. No FKs — records sync independently and LWW.
+model Camp {
+  id   String @id
+  name String
+
+  /// First/last camp day (inclusive), YYYY-MM-DD. Validated by the Zod CampSchema.
+  startDate String
+  endDate   String
+  /// People to cook for; the default scaling target for every menu recipe.
+  headcount Int
+
+  /// Client timestamp (epoch ms). The last-write-wins ordering key.
+  updatedAt BigInt
+}
+
+/// One recipe placed in a camp menu (issue 0007): pins a recipe to a camp day (date) and one
+/// of the five meal slots. A slot holds zero or more. servingsOverride, when set, replaces the
+/// camp headcount as the scaling target for that placement. No FKs — records sync LWW.
+model MenuEntry {
+  id     String @id
+  /// The camp this placement belongs to (plain id, no FK — see Shop).
+  campId String
+
+  /// Which camp day, YYYY-MM-DD.
+  date String
+  /// BREAKFAST | MORNING_SNACK | LUNCH | AFTERNOON_SNACK | DINNER. Plain String — SQLite has no
+  /// enums; the values are validated by the Zod MenuEntrySchema in packages/core at the boundary.
+  slot String
+  /// The recipe placed here, referenced live (plain id, no FK).
+  recipeId String
+
+  /// Optional per-placement serving target; null means scale to the camp headcount.
+  servingsOverride Int?
+
+  /// Client timestamp (epoch ms). The last-write-wins ordering key.
+  updatedAt BigInt
+
+  @@index([campId])
+}
+
+/// One line of a camp's shopping list (issue 0008): a catalog ingredient and a base-unit
+/// quantity to buy. source is auto (from menu needs − inventory), manual, or restock (pushed
+/// from a low-par inventory entry). No FKs — records sync independently and last-write-wins.
+model ShoppingItem {
+  id     String @id
+  /// The camp whose list this line belongs to (plain id, no FK — see Shop).
+  campId String
+  /// The catalog ingredient to buy (plain id, no FK).
+  ingredientId String
+
+  /// auto | manual | restock. Plain String — SQLite has no enums; the values are validated by
+  /// the Zod ShoppingItemSchema in packages/core at the boundary.
+  source String
+  /// Quantity to buy, in the ingredient's base units.
+  quantity Float
+  /// Quantity actually received into stock, in base units (issue 0009). Null until the line is
+  /// marked bought; its presence flags the line bought and is the amount added to the ingredient.
+  received Float?
+
+  /// Client timestamp (epoch ms). The last-write-wins ordering key.
+  updatedAt BigInt
+
+  @@index([campId])
+}
+
+/// One line of a camp's manual spending ledger (issue 0010): an amount in RON actually spent, a
+/// free-text label, an optional category, and an optional camp day. Standalone — independent of
+/// the shopping estimate; the camp total is just the sum of these. No FKs — records sync LWW.
+model Expense {
+  id     String @id
+  /// The camp this expense belongs to (plain id, no FK — see Shop).
+  campId String
+
+  /// Amount spent, in RON.
+  amount Float
+  /// What the money was spent on (free text).
+  label  String
+  /// Optional grouping label, e.g. "Food", "Fuel". Null means uncategorised.
+  category String?
+  /// Optional camp day the spend happened on, YYYY-MM-DD. Null means unassigned.
+  day String?
+
+  /// Client timestamp (epoch ms). The last-write-wins ordering key.
+  updatedAt BigInt
+
+  @@index([campId])
 }

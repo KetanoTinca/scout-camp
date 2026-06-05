@@ -5,8 +5,35 @@ inventory, spending) for a 2–3 person team. Offline-first on phones at camp, l
 between leaders when online, behind a single shared password and a Cloudflare tunnel.
 
 The full spec lives in [.scratch/orions-cookbook/0001-prd.md](.scratch/orions-cookbook/0001-prd.md);
-each numbered file there is a vertical slice. This skeleton is slice **0002**; the `Note`
-entity is throwaway scaffolding that proves the stack, replaced by real entities in later slices.
+each numbered file there is a vertical slice. Shipped so far: **0002** (infra skeleton), **0003**
+(ingredient catalog + `units` module), **0004** (inventory — editable stock & optional par levels,
+low-stock flagging), **0005** (shops + per-shop package prices + the `pricing` module: price-per-unit,
+cheapest-shop, package/cost math), **0006** (recipe cookbook + the `scaling` module: ratio rescaling
+with readable display; browse/search by category & tag), **0007** (camps + the day/meal-slot menu
+grid: `campDays` enumerates a camp's inclusive date range, recipes placed in a slot auto-scale to
+the camp headcount or a per-placement serving override, reusing the `scaling` module), **0008**
+(per-camp shopping list + the `needs` module — the heart: aggregate every menu placement's scaled
+ingredient requirement, net off inventory with a `max(0, need − stock)` floor; lines are priced via
+the `pricing` module and the list mixes auto/manual/restock sources, regenerable from the menu), **0009**
+(receive purchases — mark a shopping line bought, edit the received quantity off the planned default,
+and confirming adds it to the ingredient's stock; bought lines are frozen records, excluded from the
+estimate and skipped by regeneration. `ShoppingItem` gained an optional `received` field whose presence
+flags the line bought — an *extend* slice, no new entity), **0010** (per-camp spending ledger — a
+standalone manual `Expense` entity: amount in RON, label, optional category, optional camp day, with a
+running per-camp total. Deliberately independent of the shopping estimate — buying a line does not post
+an expense; a plain new-entity slice with no new pure module, the total is just a sum), **0011**
+(offline/realtime hardening — no new entity; isolation tests for the generic sync engine against a
+fake transport: every entity's writes queue offline and replay on reconnect, a timestamp clash
+resolves last-write-wins regardless of arrival order, and two clients sharing a fake hub converge on
+fan-out; the Fastify `RealtimeHub` gets its own fan-out/drop-on-disconnect test).
+`Ingredient` is the first real entity and serves as catalog **and** inventory; `Shop` and `ShopPrice`
+(one offer per ingredient×shop) are the second and third; `Recipe` and `RecipeIngredient` (one line
+per recipe×ingredient) are the fourth and fifth; `Camp` and `MenuEntry` (one placement per
+camp×day×slot, holding an optional `servingsOverride`) are the sixth and seventh; `ShoppingItem`
+(one buy line per camp, tagged auto/manual/restock) is the eighth; `Expense` (one ledger line per
+camp) is the ninth — all the same identity/details split as Shop/ShopPrice. The `Note` entity is
+throwaway scaffolding from the skeleton that proves the stack. With 0011's sync hardening, all of the
+PRD's planned slices (0002–0011) are now shipped.
 
 ## Monorepo layout (pnpm workspace)
 
@@ -60,12 +87,24 @@ can't set WS headers).
   client `updatedAt` (epoch ms). The *same* `shouldApply(existing, incoming)` rule from
   `packages/core` guards every apply on both sides, so replays and live updates converge. No CRDTs.
 
-**Adding a new entity** (the slice loop):
+**Adding a new entity** (the slice loop — 0005 added `Shop` and `ShopPrice` this way, the first
+new entities since the skeleton):
 1. `packages/core`: add `entities/<name>.ts` with a Zod schema + an `ENTITY_<NAME>` constant; export it.
 2. `apps/server`: add the Prisma model (+ migration); register an `EntityHandler` in `sync.ts`'s
-   `registry`; add a read endpoint in `routes/api.ts` for hydration.
-3. `apps/web`: add a Dexie table in `sync/db.ts`, map it in `DexieMirror`, add its pull endpoint
-   in `http-transport.ts`, and hydrate it in `runtime.ts`.
+   `registry`; add a read endpoint in `routes/api.ts` for hydration; map the row in `repository.ts`.
+3. `apps/web`: add a Dexie table in `sync/db.ts` (bump `version()`), add its pull endpoint in
+   `http-transport.ts`, and hydrate it in `runtime.ts`.
+
+`DexieMirror` derives an entity's table name generically as `` `${entity}s` `` (no per-entity
+wiring), and the pull endpoint reads the matching response key — so an `ENTITY_*` value must
+pluralise cleanly with a trailing `s`: `shop` → table `shops`, `shopPrice` → table `shopPrices`
+(camelCase + `s`). Keep the Dexie table name, the REST response key, and the constant in lockstep.
+
+*Extending* an existing entity (e.g. 0004 added `parLevel` to `Ingredient`) skips the new-table
+steps — just thread the field through the Zod schema → Prisma model (+ migration) → the
+`EntityHandler`'s `put` → the repository's read mapping → the UI. No new Dexie table or pull
+endpoint is needed, and no Dexie version bump unless the field must be *indexed* (Dexie stores the
+whole record regardless of declared indexes).
 
 ## Conventions
 
@@ -76,7 +115,8 @@ can't set WS headers).
   with `z.infer`. Validate untrusted input (request bodies, WS messages) at the boundary.
 - **Tests assert external behaviour through public interfaces** (Vitest). Core modules are pure
   (plain in → plain out, no mocks); the sync engine is tested against a fake transport with
-  `fake-indexeddb`. Follow this style for later modules (`units`, `scaling`, `needs`, `pricing`).
+  `fake-indexeddb`. `units`, the `isLowStock` inventory rule, `pricing`, `scaling`, and `needs`
+  all follow this style — keep any new pure module isolation-tested the same way.
 - **Currency RON, metric units, app-wide** — fixed constants in `packages/core/config.ts`, never
   per-user settings.
 
@@ -94,10 +134,18 @@ wins over the file (so the container's injected vars take precedence; no `.env` 
 
 - **pnpm blocks dependency build scripts.** Prisma + esbuild are allowlisted via
   `onlyBuiltDependencies` in `pnpm-workspace.yaml`. If a postinstall didn't run, `pnpm rebuild`.
-- **`Note.updatedAt` is a Prisma `BigInt`** (epoch ms exceeds 32-bit Int). Convert at the repo
-  edge: `Number(row.updatedAt)` on read, `BigInt(n)` on write — keep BigInt out of JSON.
+- **Every entity's `updatedAt` is a Prisma `BigInt`** (epoch ms exceeds 32-bit Int) — `Note`,
+  `Ingredient`, `Shop`, `ShopPrice`, `Recipe`, `RecipeIngredient`, and each entity to come. Convert
+  at the repo edge: `Number(row.updatedAt)` on read, `BigInt(n)` on write — keep BigInt out of JSON.
+- **SQLite has no array columns**, so `string[]` fields are stored JSON-encoded in a `String`
+  column (`Recipe.tags`, `Recipe.steps`). The Zod schema keeps the field a `string[]`; the sync
+  handler `JSON.stringify`s on write and the repository `JSON.parse`s on read. Same convert-at-the-
+  edge discipline as BigInt — the wire/JSON shape stays a real array.
+- **The local SQLite file is at `apps/server/prisma/prisma/dev.db`, not `apps/server/prisma/dev.db`.**
+  Prisma resolves a relative `DATABASE_URL` (`file:./prisma/dev.db`) against the *schema* directory
+  (`apps/server/prisma/`), so `./prisma/...` nests one level deeper. Run `prisma migrate dev` from
+  `apps/server` (the migration command above) so it lands on that same file.
 - **The server only serves static web assets when the build exists.** In `pnpm dev` it logs a
   warning and the Vite dev server hosts the UI instead — that's expected.
 - **Migrations run on container start** (`docker-entrypoint.sh` → `prisma migrate deploy`), which
   creates `app.db` on the volume on first boot.
-```
