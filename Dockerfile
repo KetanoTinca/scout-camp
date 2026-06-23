@@ -10,7 +10,11 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY . .
-RUN pnpm install --frozen-lockfile
+# pnpm 11 blocks dependency build scripts and (in this version) ERR_PNPM_IGNORED_BUILDS
+# is fatal even with `onlyBuiltDependencies` allowlisted. We don't need those postinstalls:
+# the Prisma query engine is fetched by `prisma generate` in the build step below, and
+# esbuild's binary ships as the normal `@esbuild/<platform>` package. So skip install scripts.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm -r build
 
 # --- Runtime stage: serve API + WS + built PWA from one Fastify process -----------------
