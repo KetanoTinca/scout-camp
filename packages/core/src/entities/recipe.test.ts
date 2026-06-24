@@ -37,4 +37,17 @@ describe("RecipeSchema", () => {
   it("rejects an unknown category", () => {
     expect(() => RecipeSchema.parse({ ...base, category: "BRUNCH" })).toThrow();
   });
+
+  it("treats a dish photo as optional", () => {
+    expect(RecipeSchema.parse(base).dishPhoto).toBeUndefined();
+  });
+
+  it("accepts an image data URL as the dish photo", () => {
+    const dataUrl = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+    expect(RecipeSchema.parse({ ...base, dishPhoto: dataUrl }).dishPhoto).toBe(dataUrl);
+  });
+
+  it("rejects a dish photo that is not an image data URL", () => {
+    expect(() => RecipeSchema.parse({ ...base, dishPhoto: "ftp://x/p.png" })).toThrow();
+  });
 });

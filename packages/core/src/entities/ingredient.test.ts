@@ -47,3 +47,32 @@ describe("IngredientSchema parLevel", () => {
     expect(() => IngredientSchema.parse({ ...base, parLevel: -1 })).toThrow();
   });
 });
+
+describe("IngredientSchema pieceWeight", () => {
+  const count = {
+    id: "i2",
+    name: "Onion",
+    dimension: "COUNT" as const,
+    baseUnit: "piece" as const,
+    stockQty: 0,
+    updatedAt: 1,
+  };
+
+  it("accepts a COUNT ingredient with no Piece Weight", () => {
+    expect(IngredientSchema.parse(count).pieceWeight).toBeUndefined();
+  });
+
+  it("accepts a positive Piece Weight on a COUNT ingredient", () => {
+    expect(IngredientSchema.parse({ ...count, pieceWeight: 100 }).pieceWeight).toBe(100);
+  });
+
+  it("rejects a non-positive Piece Weight", () => {
+    expect(() => IngredientSchema.parse({ ...count, pieceWeight: 0 })).toThrow();
+    expect(() => IngredientSchema.parse({ ...count, pieceWeight: -5 })).toThrow();
+  });
+
+  it("rejects a Piece Weight on a non-COUNT ingredient", () => {
+    const mass = { ...count, dimension: "MASS" as const, baseUnit: "g" as const };
+    expect(() => IngredientSchema.parse({ ...mass, pieceWeight: 100 })).toThrow();
+  });
+});

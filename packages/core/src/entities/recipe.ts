@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_PHOTO_DATA_URL_LENGTH } from "../config.js";
 
 /**
  * `Recipe` is a cookbook entry (issue 0006): a name, a `baseServings` count the stored
@@ -27,6 +28,17 @@ export const RecipeSchema = z.object({
   tags: z.array(z.string().min(1)).default([]),
   /** Ordered cooking steps; the index is the step number shown in the UI. */
   steps: z.array(z.string().min(1)).default([]),
+  /**
+   * Optional inline photo of the dish, a base64 image data URL (issue 0005, ADR-0002). Set and
+   * edited only in the cookbook; illustrates what the dish looks like — not a per-day record of a
+   * meal cooked. The web client downscales/compresses before storing; bounded so it can't bloat
+   * a sync batch.
+   */
+  dishPhoto: z
+    .string()
+    .startsWith("data:image/")
+    .max(MAX_PHOTO_DATA_URL_LENGTH)
+    .optional(),
   /** Client timestamp (epoch ms) — the last-write-wins ordering key. */
   updatedAt: z.number().int().nonnegative(),
 });

@@ -26,12 +26,22 @@ export const IngredientSchema = z
     stockQty: z.number().nonnegative().default(0),
     /** Optional par (minimum) level, in base units. Unset means no low-stock flagging. */
     parLevel: z.number().nonnegative().optional(),
+    /**
+     * Optional approximate mass of one piece, in grams — the Piece Weight (issue 0001, ADR-0001).
+     * COUNT ingredients only; lets a piece-count be shown and priced/shopped as an approximate
+     * weight without changing the dimension. Unset means the item is purely counted.
+     */
+    pieceWeight: z.number().positive().optional(),
     /** Client timestamp (epoch ms) — the last-write-wins ordering key. */
     updatedAt: z.number().int().nonnegative(),
   })
   .refine((ing) => ing.baseUnit === baseUnitForDimension(ing.dimension), {
     message: "baseUnit must be the base unit of its dimension",
     path: ["baseUnit"],
+  })
+  .refine((ing) => ing.pieceWeight === undefined || ing.dimension === "COUNT", {
+    message: "pieceWeight is only valid for COUNT ingredients",
+    path: ["pieceWeight"],
   });
 export type Ingredient = z.infer<typeof IngredientSchema>;
 

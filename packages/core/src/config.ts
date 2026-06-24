@@ -15,6 +15,14 @@ export type UnitSystem = typeof UNIT_SYSTEM;
 export const LOCALE = "ro-RO" as const;
 
 /**
+ * Upper bound (in characters) on an inline photo's base64 data URL — the Receipt Photo and
+ * Dish Photo stored on records (ADR-0002). The web client downscales/compresses well under
+ * this; it bounds the synced payload so one record can't bloat a sync batch. The server's
+ * `bodyLimit` is set comfortably above it to allow several photos in a single batch.
+ */
+export const MAX_PHOTO_DATA_URL_LENGTH = 1_500_000;
+
+/**
  * Format an amount of RON for display, e.g. `12.5` -> "12,50 RON".
  * Kept in core so server and client render money identically.
  */

@@ -42,6 +42,9 @@ model Ingredient {
   stockQty Float @default(0)
   /// Optional par (minimum) level, in base units. Null means no low-stock flagging.
   parLevel Float?
+  /// Optional approximate mass of one piece, in grams — the Piece Weight (issue 0001, ADR-0001).
+  /// COUNT ingredients only; null means the item is purely counted. Validated by IngredientSchema.
+  pieceWeight Float?
 
   /// Client timestamp (epoch ms). The last-write-wins ordering key.
   updatedAt BigInt
@@ -96,6 +99,9 @@ model Recipe {
   tags  String
   /// JSON-encoded ordered string[] of cooking steps.
   steps String
+  /// Optional inline dish photo as a base64 image data URL (issue 0005, ADR-0002). Null means none.
+  /// Set only in the cookbook; bounded by MAX_PHOTO_DATA_URL_LENGTH in the Zod RecipeSchema.
+  dishPhoto String?
 
   /// Client timestamp (epoch ms). The last-write-wins ordering key.
   updatedAt BigInt
@@ -204,6 +210,9 @@ model Expense {
   category String?
   /// Optional camp day the spend happened on, YYYY-MM-DD. Null means unassigned.
   day String?
+  /// Optional inline receipt photo as a base64 image data URL (issue 0004, ADR-0002). Null means
+  /// none. Pure documentation; bounded by MAX_PHOTO_DATA_URL_LENGTH in the Zod ExpenseSchema.
+  receiptPhoto String?
 
   /// Client timestamp (epoch ms). The last-write-wins ordering key.
   updatedAt BigInt

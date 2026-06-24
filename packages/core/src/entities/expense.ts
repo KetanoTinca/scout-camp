@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_PHOTO_DATA_URL_LENGTH } from "../config.js";
 
 /**
  * `Expense` is one line of a camp's manual spending ledger (issue 0010): an `amount` in RON
@@ -27,6 +28,16 @@ export const ExpenseSchema = z.object({
   day: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
+    .optional(),
+  /**
+   * Optional inline photo of the receipt, a base64 image data URL (issue 0004, ADR-0002). Pure
+   * documentation: it never links the expense to a shopping line or changes the amount. The web
+   * client downscales/compresses before storing; bounded so it can't bloat a sync batch.
+   */
+  receiptPhoto: z
+    .string()
+    .startsWith("data:image/")
+    .max(MAX_PHOTO_DATA_URL_LENGTH)
     .optional(),
   /** Client timestamp (epoch ms) — the last-write-wins ordering key. */
   updatedAt: z.number().int().nonnegative(),

@@ -42,6 +42,7 @@ export async function listIngredients(): Promise<Ingredient[]> {
     category: row.category ?? undefined,
     stockQty: row.stockQty,
     parLevel: row.parLevel ?? undefined,
+    pieceWeight: row.pieceWeight ?? undefined,
     updatedAt: Number(row.updatedAt),
   }));
 }
@@ -78,6 +79,7 @@ export async function listRecipes(): Promise<Recipe[]> {
     // tags/steps are persisted JSON-encoded (SQLite has no array columns).
     tags: JSON.parse(row.tags) as string[],
     steps: JSON.parse(row.steps) as string[],
+    dishPhoto: row.dishPhoto ?? undefined,
     updatedAt: Number(row.updatedAt),
   }));
 }
@@ -145,6 +147,7 @@ export async function listExpenses(): Promise<Expense[]> {
     // Null in the DB means "unset"; the wire shape omits these fields entirely.
     category: row.category ?? undefined,
     day: row.day ?? undefined,
+    receiptPhoto: row.receiptPhoto ?? undefined,
     updatedAt: Number(row.updatedAt),
   }));
 }

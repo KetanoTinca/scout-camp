@@ -40,4 +40,17 @@ describe("ExpenseSchema", () => {
     expect(() => ExpenseSchema.parse({ ...base, day: "2026/07/02" })).toThrow();
     expect(() => ExpenseSchema.parse({ ...base, day: "July 2" })).toThrow();
   });
+
+  it("treats a receipt photo as optional", () => {
+    expect(ExpenseSchema.parse(base).receiptPhoto).toBeUndefined();
+  });
+
+  it("accepts an image data URL as the receipt photo", () => {
+    const dataUrl = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+    expect(ExpenseSchema.parse({ ...base, receiptPhoto: dataUrl }).receiptPhoto).toBe(dataUrl);
+  });
+
+  it("rejects a receipt photo that is not an image data URL", () => {
+    expect(() => ExpenseSchema.parse({ ...base, receiptPhoto: "https://x/r.jpg" })).toThrow();
+  });
 });

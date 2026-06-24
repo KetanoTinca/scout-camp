@@ -16,7 +16,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 export async function buildServer() {
   loadDotenv();
   const env = loadEnv();
-  const app = Fastify({ logger: true });
+  // bodyLimit is raised well above Fastify's 1 MB default so a `/api/sync` batch carrying inline
+  // photos (Receipt/Dish Photo, ADR-0002) isn't rejected. WebSocket frames use @fastify/websocket's
+  // default ~100 MiB max payload, which comfortably covers a single broadcast change with a photo.
+  const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   const hub = new RealtimeHub();
 
   await app.register(fastifyWebsocket);

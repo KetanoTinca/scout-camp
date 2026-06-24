@@ -3,8 +3,12 @@ import {
   baseUnitForDimension,
   fromBase,
   format,
+  inputUnitsFor,
   inputUnitsForDimension,
+  massToPieces,
+  piecesToMass,
   toBase,
+  toBaseFor,
 } from "./units.js";
 
 describe("baseUnitForDimension", () => {
@@ -69,6 +73,73 @@ describe("fromBase (display thresholds)", () => {
   it("keeps count in pieces with no threshold", () => {
     expect(fromBase(0, "COUNT")).toEqual({ value: 0, unit: "piece" });
     expect(fromBase(5000, "COUNT")).toEqual({ value: 5000, unit: "piece" });
+  });
+});
+
+describe("inputUnitsFor (Piece-Weight-aware)", () => {
+  it("offers mass units for a COUNT ingredient that has a Piece Weight", () => {
+    expect(inputUnitsFor("COUNT", 100)).toEqual(["piece", "g", "kg"]);
+  });
+
+  it("stays pieces-only for a COUNT ingredient with no (or non-positive) Piece Weight", () => {
+    expect(inputUnitsFor("COUNT", undefined)).toEqual(["piece"]);
+    expect(inputUnitsFor("COUNT", 0)).toEqual(["piece"]);
+  });
+
+  it("ignores a Piece Weight for non-COUNT dimensions", () => {
+    expect(inputUnitsFor("MASS", 100)).toEqual(["g", "kg"]);
+    expect(inputUnitsFor("VOLUME", 100)).toEqual(["ml", "L"]);
+  });
+});
+
+describe("toBaseFor (Piece-Weight-aware)", () => {
+  it("reduces a mass entry to pieces for a COUNT ingredient with a Piece Weight", () => {
+    expect(toBaseFor(2, "kg", "COUNT", 100)).toBe(20);
+    expect(toBaseFor(500, "g", "COUNT", 100)).toBe(5);
+  });
+
+  it("passes pieces straight through for COUNT", () => {
+    expect(toBaseFor(3, "piece", "COUNT", 100)).toBe(3);
+    expect(toBaseFor(3, "piece", "COUNT", undefined)).toBe(3);
+  });
+
+  it("is plain toBase for non-COUNT dimensions", () => {
+    expect(toBaseFor(1.5, "kg", "MASS", undefined)).toBe(1500);
+    expect(toBaseFor(2, "L", "VOLUME", undefined)).toBe(2000);
+  });
+
+  it("throws on a mass unit for a COUNT ingredient with no Piece Weight", () => {
+    expect(() => toBaseFor(1, "kg", "COUNT", undefined)).toThrow();
+  });
+});
+
+describe("massToPieces / piecesToMass (Piece Weight)", () => {
+  it("converts a mass in grams to a piece count via the Piece Weight", () => {
+    expect(massToPieces(2000, 100)).toBe(20);
+    expect(massToPieces(1500, 100)).toBe(15);
+  });
+
+  it("composes with toBase so a kg entry becomes pieces", () => {
+    expect(massToPieces(toBase(1.5, "kg"), 100)).toBe(15);
+  });
+
+  it("does not round — fractional pieces are tolerated", () => {
+    expect(massToPieces(1050, 100)).toBe(10.5);
+  });
+
+  it("converts a piece count back to its approximate mass in grams", () => {
+    expect(piecesToMass(20, 100)).toBe(2000);
+    expect(format(piecesToMass(20, 100), "MASS")).toBe("2 kg");
+  });
+
+  it("round-trips mass -> pieces -> mass", () => {
+    expect(piecesToMass(massToPieces(1700, 100), 100)).toBe(1700);
+  });
+
+  it("throws on a non-positive Piece Weight", () => {
+    expect(() => massToPieces(1000, 0)).toThrow();
+    expect(() => massToPieces(1000, -50)).toThrow();
+    expect(() => piecesToMass(10, 0)).toThrow();
   });
 });
 

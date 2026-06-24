@@ -18,14 +18,17 @@ import {
   format as formatQuantity,
   formatCurrency,
   fromBase,
+  inputUnitsFor,
   inputUnitsForDimension,
   isLowStock,
   LOCALE,
+  piecesToMass,
   priceLine,
   pricePerUnit,
   scaleRecipe,
   shoppingNeeds,
   toBase,
+  toBaseFor,
   type Camp,
   type Dimension,
   type Expense,
@@ -45,6 +48,7 @@ import {
 } from "@orions-cookbook/core";
 import { useEffect, useState } from "react";
 import { clearToken, getToken, login } from "./auth.js";
+import { compressImage } from "./image.js";
 import {
   useCamps,
   useExpenses,
@@ -148,6 +152,99 @@ const SHOPPING_SOURCE_LABELS: Record<ShoppingSource, string> = {
   manual: "manual",
   restock: "restock",
 };
+
+/**
+ * A small photo thumbnail that opens the full image in a tap-to-dismiss overlay (issue 0004,
+ * ADR-0002). Read-only — shared by the receipt ledger and the recipe/menu Dish Photo.
+ */
+function PhotoThumb({ src, alt, small }: { src: string; alt: string; small?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <img
+        src={src}
+        alt={alt}
+        className={small ? "photo-thumb small" : "photo-thumb"}
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setOpen(true);
+        }}
+      />
+      {open && (
+        <div className="photo-overlay" role="dialog" aria-modal="true" onClick={() => setOpen(false)}>
+          <img src={src} alt={alt} className="photo-full" />
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Capture/preview/clear control for an inline photo (issue 0004, ADR-0002). Picking a file
+ * downscales + compresses it client-side (`compressImage`) into a base64 data URL handed back via
+ * `onChange`; the preview shows the current photo with a Remove action. Shared by the expense form
+ * and (issue 0005) the recipe form.
+ */
+function PhotoField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string | undefined;
+  onChange: (photo: string | undefined) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the same file be re-picked after a remove
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onChange(await compressImage(file));
+    } catch {
+      setError("Couldn't read that image.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <label className="field">
+      <span className="field-label">{label}</span>
+      {value ? (
+        <div className="row photo-edit">
+          <PhotoThumb src={value} alt={label} />
+          <button type="button" className="ghost small" onClick={() => onChange(undefined)}>
+            Remove
+          </button>
+        </div>
+      ) : (
+        <input type="file" accept="image/*" capture="environment" onChange={pick} disabled={busy} />
+      )}
+      {busy && <span className="meta muted">Compressing…</span>}
+      {error && <span className="error">{error}</span>}
+    </label>
+  );
+}
+
+/**
+ * A base-unit quantity rendered with its approximate weight — "20 pieces ≈ 2 kg" — when the
+ * item is COUNT and carries a Piece Weight; otherwise the plain formatted quantity (issue 0003,
+ * the uniform rule). Takes primitives so it serves both ingredient rows and scaled recipe lines.
+ */
+function formatQtyApprox(qty: number, dimension: Dimension, pieceWeight?: number): string {
+  const base = formatQuantity(qty, dimension);
+  if (dimension === "COUNT" && pieceWeight !== undefined && pieceWeight > 0) {
+    return `${base} ≈ ${formatQuantity(piecesToMass(qty, pieceWeight), "MASS")}`;
+  }
+  return base;
+}
 
 type Tab =
   | "catalog"
@@ -340,7 +437,8 @@ function CatalogPanel({ ingredients }: { ingredients: Ingredient[] }) {
                   {ingredient.category && <span className="chip">{ingredient.category}</span>}
                 </span>
                 <span className="meta muted">
-                  In stock: {formatQuantity(ingredient.stockQty, ingredient.dimension)}
+                  In stock:{" "}
+                  {formatQtyApprox(ingredient.stockQty, ingredient.dimension, ingredient.pieceWeight)}
                 </span>
               </div>
               <div className="row">
@@ -392,10 +490,11 @@ function InventoryPanel({ ingredients, camps }: { ingredients: Ingredient[]; cam
                   {isLowStock(ingredient) && <span className="chip low">Low</span>}
                 </span>
                 <span className="meta muted">
-                  Stock: {formatQuantity(ingredient.stockQty, ingredient.dimension)}
+                  Stock:{" "}
+                  {formatQtyApprox(ingredient.stockQty, ingredient.dimension, ingredient.pieceWeight)}
                   {" · Par: "}
                   {ingredient.parLevel !== undefined
-                    ? formatQuantity(ingredient.parLevel, ingredient.dimension)
+                    ? formatQtyApprox(ingredient.parLevel, ingredient.dimension, ingredient.pieceWeight)
                     : "—"}
                 </span>
               </div>
@@ -477,10 +576,30 @@ function IngredientForm({
   const [dimension, setDimension] = useState<Dimension>(initial?.dimension ?? "MASS");
   const [category, setCategory] = useState(initial?.category ?? "");
 
+  // Piece Weight is entered as a mass (g/kg) and stored in grams; COUNT ingredients only.
+  const massUnits = inputUnitsForDimension("MASS");
+  const pieceWeightDisplay =
+    initial?.pieceWeight !== undefined ? fromBase(initial.pieceWeight, "MASS") : null;
+  const [pieceWeightValue, setPieceWeightValue] = useState(
+    pieceWeightDisplay ? String(pieceWeightDisplay.value) : "",
+  );
+  const [pieceWeightUnit, setPieceWeightUnit] = useState<string>(
+    pieceWeightDisplay ? pieceWeightDisplay.unit : "g",
+  );
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
+    // Only COUNT ingredients carry a Piece Weight; a blank or invalid entry clears it.
+    const pwNum = Number(pieceWeightValue);
+    const pieceWeight =
+      dimension === "COUNT" &&
+      pieceWeightValue.trim() !== "" &&
+      Number.isFinite(pwNum) &&
+      pwNum > 0
+        ? toBase(pwNum, pieceWeightUnit)
+        : undefined;
     await onSubmit({
       id: initial?.id ?? crypto.randomUUID(),
       name: trimmed,
@@ -488,11 +607,14 @@ function IngredientForm({
       category: category.trim() || undefined,
       stockQty: initial?.stockQty ?? 0,
       parLevel: initial?.parLevel,
+      pieceWeight,
     });
     if (!initial) {
       setName("");
       setCategory("");
       setDimension("MASS");
+      setPieceWeightValue("");
+      setPieceWeightUnit("g");
     }
   };
 
@@ -518,6 +640,23 @@ function IngredientForm({
           placeholder="Category (optional)"
         />
       </div>
+      {dimension === "COUNT" && (
+        <label className="field">
+          <span className="field-label">Approx. weight per piece (optional)</span>
+          <div className="row">
+            <input
+              type="number"
+              min="0"
+              step="any"
+              inputMode="decimal"
+              value={pieceWeightValue}
+              onChange={(e) => setPieceWeightValue(e.target.value)}
+              placeholder="e.g. 100"
+            />
+            <UnitSelect units={massUnits} value={pieceWeightUnit} onChange={setPieceWeightUnit} />
+          </div>
+        </label>
+      )}
       <div className="row">
         <button type="submit" disabled={name.trim().length === 0}>
           {submitLabel}
@@ -552,7 +691,7 @@ function stockPutOp(ing: Ingredient, stockQty: number, parLevel: number | undefi
  */
 function StockForm({ ingredient, onDone }: { ingredient: Ingredient; onDone: () => void }) {
   const dimension = ingredient.dimension;
-  const units = inputUnitsForDimension(dimension);
+  const units = inputUnitsFor(dimension, ingredient.pieceWeight);
 
   const stockDisplay = fromBase(ingredient.stockQty, dimension);
   const [stockValue, setStockValue] = useState(String(stockDisplay.value));
@@ -565,14 +704,17 @@ function StockForm({ ingredient, onDone }: { ingredient: Ingredient; onDone: () 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     const stockNum = Number(stockValue);
-    const stockQty = Number.isFinite(stockNum) && stockNum > 0 ? toBase(stockNum, stockUnit) : 0;
+    const stockQty =
+      Number.isFinite(stockNum) && stockNum > 0
+        ? toBaseFor(stockNum, stockUnit, dimension, ingredient.pieceWeight)
+        : 0;
 
     const parTrimmed = parValue.trim();
     const parNum = Number(parTrimmed);
     const parLevel =
       parTrimmed === "" || !Number.isFinite(parNum) || parNum < 0
         ? undefined
-        : toBase(parNum, parUnit);
+        : toBaseFor(parNum, parUnit, dimension, ingredient.pieceWeight);
 
     await engine.enqueue(stockPutOp(ingredient, stockQty, parLevel));
     onDone();
@@ -890,7 +1032,8 @@ function IngredientPriceEditor({
   onDone: () => void;
 }) {
   const dimension = ingredient.dimension;
-  const units = inputUnitsForDimension(dimension);
+  // A piece-item with a Piece Weight may price its package in g/kg; stored in pieces all the same.
+  const units = inputUnitsFor(dimension, ingredient.pieceWeight);
   const emptyDraft = (): PriceDraft => ({ size: "", unit: units[0], price: "" });
 
   const [drafts, setDrafts] = useState<Record<string, PriceDraft>>(() => {
@@ -918,7 +1061,10 @@ function IngredientPriceEditor({
     const price = Number(draft.price);
     if (draft.size.trim() === "" || !Number.isFinite(size) || size <= 0) return null;
     if (draft.price.trim() === "" || !Number.isFinite(price) || price < 0) return null;
-    return pricePerUnit({ packageSize: toBase(size, draft.unit), packagePrice: price });
+    return pricePerUnit({
+      packageSize: toBaseFor(size, draft.unit, dimension, ingredient.pieceWeight),
+      packagePrice: price,
+    });
   };
 
   // Which shop is currently cheapest among the live drafts (for the inline flag).
@@ -953,7 +1099,7 @@ function IngredientPriceEditor({
             existing?.id ?? crypto.randomUUID(),
             ingredient.id,
             shop.id,
-            toBase(size, draft.unit),
+            toBaseFor(size, draft.unit, dimension, ingredient.pieceWeight),
             price,
           ),
         );
@@ -1223,6 +1369,7 @@ function RecipeCard({
       name: ing?.name ?? "(removed ingredient)",
       quantity: line.quantity,
       dimension: ing?.dimension ?? ("COUNT" as Dimension),
+      pieceWeight: ing?.pieceWeight,
     };
   });
   const scaled = scaleRecipe(scalable, recipe.baseServings, target);
@@ -1245,6 +1392,7 @@ function RecipeCard({
               ))}
             </span>
           )}
+          {recipe.dishPhoto && <PhotoThumb src={recipe.dishPhoto} alt={recipe.name} />}
         </div>
         <div className="row">
           <button className="ghost small" onClick={() => setExpanded((v) => !v)}>
@@ -1301,7 +1449,9 @@ function RecipeCard({
             {scaled.map((line) => (
               <li key={line.id} className="row between">
                 <span>{line.name}</span>
-                <span className="muted">{line.display}</span>
+                <span className="muted">
+                  {formatQtyApprox(line.scaledQuantity, line.dimension, line.pieceWeight)}
+                </span>
               </li>
             ))}
           </ul>
@@ -1350,6 +1500,7 @@ function RecipeForm({
   const [category, setCategory] = useState<RecipeCategory>(initial?.category ?? "DINNER");
   const [tagsInput, setTagsInput] = useState(initial?.tags.join(", ") ?? "");
   const [stepsInput, setStepsInput] = useState(initial?.steps.join("\n") ?? "");
+  const [dishPhoto, setDishPhoto] = useState<string | undefined>(initial?.dishPhoto);
 
   const ingredientById = (id: string) => ingredients.find((i) => i.id === id);
   const unitsFor = (id: string) => {
@@ -1400,6 +1551,7 @@ function RecipeForm({
       category,
       tags: parseTags(tagsInput),
       steps: parseSteps(stepsInput),
+      dishPhoto,
       updatedAt: Date.now(),
     };
     await engine.enqueue(recipePutOp(recipe));
@@ -1478,6 +1630,8 @@ function RecipeForm({
           rows={4}
         />
       </label>
+
+      <PhotoField label="Dish photo (optional)" value={dishPhoto} onChange={setDishPhoto} />
 
       <div className="field">
         <span className="field-label">Ingredients</span>
@@ -1931,6 +2085,7 @@ function MenuEntryRow({
       name: ing?.name ?? "(removed ingredient)",
       quantity: line.quantity,
       dimension: ing?.dimension ?? ("COUNT" as Dimension),
+      pieceWeight: ing?.pieceWeight,
     };
   });
   const scaled = recipe ? scaleRecipe(scalable, recipe.baseServings, effective) : [];
@@ -1944,6 +2099,7 @@ function MenuEntryRow({
             {effective} servings
             {overridden && <span className="chip">override</span>}
           </span>
+          {recipe?.dishPhoto && <PhotoThumb src={recipe.dishPhoto} alt={recipe.name} small />}
         </div>
         <div className="row">
           {recipe && (
@@ -1995,7 +2151,9 @@ function MenuEntryRow({
             {scaled.map((line) => (
               <li key={line.id} className="row between">
                 <span>{line.name}</span>
-                <span className="muted">{line.display}</span>
+                <span className="muted">
+                  {formatQtyApprox(line.scaledQuantity, line.dimension, line.pieceWeight)}
+                </span>
               </li>
             ))}
           </ul>
@@ -2258,13 +2416,15 @@ function ShoppingItemRow({
           <span className="meta muted">
             Received{" "}
             {ingredient
-              ? formatQuantity(item.received ?? 0, ingredient.dimension)
+              ? formatQtyApprox(item.received ?? 0, ingredient.dimension, ingredient.pieceWeight)
               : (item.received ?? 0)}{" "}
             into stock
           </span>
         ) : (
           <span className="meta muted">
-            {ingredient ? formatQuantity(item.quantity, ingredient.dimension) : item.quantity}
+            {ingredient
+              ? formatQtyApprox(item.quantity, ingredient.dimension, ingredient.pieceWeight)
+              : item.quantity}
             {line && shopName ? (
               <>
                 {` · ${line.packages} pkg · ${formatCurrency(line.cost)} · `}
@@ -2307,7 +2467,7 @@ function ReceiveForm({
   onCancel: () => void;
 }) {
   const dimension = ingredient.dimension;
-  const units = inputUnitsForDimension(dimension);
+  const units = inputUnitsFor(dimension, ingredient.pieceWeight);
   const plannedDisplay = fromBase(planned, dimension);
   const [value, setValue] = useState(String(plannedDisplay.value));
   const [unit, setUnit] = useState<string>(plannedDisplay.unit);
@@ -2315,7 +2475,8 @@ function ReceiveForm({
   const confirm = (e: React.FormEvent) => {
     e.preventDefault();
     const n = Number(value);
-    const received = Number.isFinite(n) && n >= 0 ? toBase(n, unit) : planned;
+    const received =
+      Number.isFinite(n) && n >= 0 ? toBaseFor(n, unit, dimension, ingredient.pieceWeight) : planned;
     onConfirm(received);
   };
 
@@ -2354,13 +2515,15 @@ function ManualItemForm({ camp, ingredients }: { camp: Camp; ingredients: Ingred
   const [unit, setUnit] = useState<string>("g");
 
   const ingredient = ingredients.find((i) => i.id === ingredientId);
-  const units = ingredient ? inputUnitsForDimension(ingredient.dimension) : (["g", "kg"] as const);
+  const units = ingredient
+    ? inputUnitsFor(ingredient.dimension, ingredient.pieceWeight)
+    : (["g", "kg"] as const);
 
   // Reset the unit to the chosen ingredient's base input unit when the ingredient changes.
   const pick = (id: string) => {
     setIngredientId(id);
     const next = ingredients.find((i) => i.id === id);
-    setUnit(next ? inputUnitsForDimension(next.dimension)[0] : "g");
+    setUnit(next ? inputUnitsFor(next.dimension, next.pieceWeight)[0] : "g");
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -2373,7 +2536,7 @@ function ManualItemForm({ camp, ingredients }: { camp: Camp; ingredients: Ingred
         campId: camp.id,
         ingredientId: ingredient.id,
         source: "manual",
-        quantity: toBase(n, unit),
+        quantity: toBaseFor(n, unit, ingredient.dimension, ingredient.pieceWeight),
         updatedAt: Date.now(),
       }),
     );
@@ -2513,6 +2676,9 @@ function ExpensesPanel({ camps, expenses }: { camps: Camp[]; expenses: Expense[]
                   {formatCurrency(expense.amount)}
                   {expense.day && ` · ${formatDayLabel(expense.day)}`}
                 </span>
+                {expense.receiptPhoto && (
+                  <PhotoThumb src={expense.receiptPhoto} alt={`Receipt for ${expense.label}`} />
+                )}
               </div>
               <div className="row">
                 <button className="ghost small" onClick={() => setEditingId(expense.id)}>
@@ -2557,6 +2723,7 @@ function ExpenseForm({
   const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
   const [category, setCategory] = useState(initial?.category ?? "");
   const [day, setDay] = useState(initial?.day ?? "");
+  const [receiptPhoto, setReceiptPhoto] = useState<string | undefined>(initial?.receiptPhoto);
 
   const days = campDays(camp.startDate, camp.endDate);
   const amountNum = Number(amount);
@@ -2574,6 +2741,7 @@ function ExpenseForm({
         label: label.trim(),
         category: category.trim() || undefined,
         day: day || undefined,
+        receiptPhoto,
         updatedAt: Date.now(),
       }),
     );
@@ -2584,6 +2752,7 @@ function ExpenseForm({
       setAmount("");
       setCategory("");
       setDay("");
+      setReceiptPhoto(undefined);
     }
   };
 
@@ -2628,6 +2797,7 @@ function ExpenseForm({
         onChange={(e) => setCategory(e.target.value)}
         placeholder="Category (optional)"
       />
+      <PhotoField label="Receipt photo (optional)" value={receiptPhoto} onChange={setReceiptPhoto} />
       <div className="row">
         <button type="submit" disabled={!valid}>
           {initial ? "Save" : "Add expense"}

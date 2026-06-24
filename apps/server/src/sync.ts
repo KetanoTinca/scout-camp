@@ -79,6 +79,7 @@ const ingredientHandler: EntityHandler = {
       category: ing.category ?? null,
       stockQty: ing.stockQty,
       parLevel: ing.parLevel ?? null,
+      pieceWeight: ing.pieceWeight ?? null,
       updatedAt: BigInt(ing.updatedAt),
     };
     await prisma.ingredient.upsert({
@@ -152,6 +153,7 @@ const recipeHandler: EntityHandler = {
       // tags/steps are string[] — stored JSON-encoded, SQLite has no array columns.
       tags: JSON.stringify(recipe.tags),
       steps: JSON.stringify(recipe.steps),
+      dishPhoto: recipe.dishPhoto ?? null,
       updatedAt: BigInt(recipe.updatedAt),
     };
     await prisma.recipe.upsert({
@@ -284,6 +286,7 @@ const expenseHandler: EntityHandler = {
       label: expense.label,
       category: expense.category ?? null,
       day: expense.day ?? null,
+      receiptPhoto: expense.receiptPhoto ?? null,
       updatedAt: BigInt(expense.updatedAt),
     };
     await prisma.expense.upsert({
